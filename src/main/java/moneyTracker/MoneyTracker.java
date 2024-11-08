@@ -11,6 +11,11 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
+import org.hibernate.cfg.Configuration;
+
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 /**
@@ -19,13 +24,19 @@ import jakarta.servlet.http.*;
 @WebServlet("/MoneyTrack")
 public class MoneyTracker extends HttpServlet {
 	private static final long serialVersionUID = 1L;
+	private static Session session;
        
     /**
      * @see HttpServlet#HttpServlet()
      */
     public MoneyTracker() {
         super();
-        // TODO Auto-generated constructor stub
+        Configuration config = new Configuration();
+		config.configure();
+		System.out.println(config);
+		SessionFactory sessionFactory=config.buildSessionFactory(); 
+        session = sessionFactory.openSession(); 
+        System.out.println(session);
     }
 
 	/**
@@ -46,7 +57,7 @@ public class MoneyTracker extends HttpServlet {
 
 	        List<Expense> expenses = null;
 			try {
-				expenses = readFromFileAsync().get();
+				expenses = readFromDbAsync().get();
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -58,7 +69,7 @@ public class MoneyTracker extends HttpServlet {
 	        for (Expense exp : expenses) 
 	        {
 	            String date = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(exp.getDate());
-	            String expenseValue = exp.getExpense();
+	            Long expenseValue = exp.getExpense();
 	            String reason = exp.getReason();
 
 	            out.println("<p>" + date + ": " + expenseValue + " (" + reason + ")</p>");
@@ -68,64 +79,27 @@ public class MoneyTracker extends HttpServlet {
 	        out.println("</html>");    
 	}
 	
-	private List<Expense> readFromFile() 
+	private List<Expense> readFromDb() 
 	{
-	    String filePath = getServletContext().getRealPath("/") + "Expenses.ser";
-	    List<Expense> expenses = new ArrayList<>();
-
-	    File file = new File(filePath);
-	    if (!file.exists()) {
-	        return expenses;
-	    }
-
-	    try (FileInputStream fis = new FileInputStream(filePath);
-	         ObjectInputStream ois = new ObjectInputStream(fis)) 
-	    {
-	        expenses = (List<Expense>) ois.readObject();
-	    } 
-	    catch (ClassNotFoundException | IOException e) 
-	    {
-	        e.printStackTrace();
-	    }
-
-	    return expenses;
+	    return session.createQuery("from Expense E", Expense.class).getResultList();
 	}
 	
-	private CompletableFuture<List<Expense>> readFromFileAsync() 
+	private CompletableFuture<List<Expense>> readFromDbAsync() 
 	{ 
-		return CompletableFuture.supplyAsync(this::readFromFile); 
+		return CompletableFuture.supplyAsync(this::readFromDb); 
 	}
 	
-	private void saveToFile(String expense, String reason) 
+	private void saveToDb(String expense, String reason) 
 	{
-		String filePath = getServletContext().getRealPath("/") + "Expenses.ser";
-	    List<Expense> expenses = new ArrayList<>();
-		try {
-			expenses = readFromFileAsync().get();
-		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (ExecutionException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	    expenses.add(new Expense(new Date(), expense, reason));
-
-	    try (FileOutputStream fos = new FileOutputStream(filePath);
-	         ObjectOutputStream oos = new ObjectOutputStream(fos)) 
-	    {
-	        oos.writeObject(expenses);
-	        System.out.println("Saved to file successfully!");
-	    }
-	    catch (IOException e) 
-	    {
-	        e.printStackTrace();
-	    }
+		Expense e = new Expense(new Date(), Long.parseLong(expense), reason);
+		Transaction t = session.beginTransaction();
+		session.save(e);
+		t.commit();
 	}
 	
-	private CompletableFuture<Void> saveToFileAsync(String expense, String reason) 
+	private CompletableFuture<Void> saveToDbAsync(String expense, String reason) 
 	{ 
-		return CompletableFuture.runAsync(() -> saveToFile(expense, reason)); 
+		return CompletableFuture.runAsync(() -> saveToDb(expense, reason)); 
 	}
 
 	/**
@@ -138,7 +112,7 @@ public class MoneyTracker extends HttpServlet {
 		
 		System.out.println("Amount: " + amount +  " Reason: " + reason);
 		
-		saveToFileAsync(amount, reason);
+		saveToDbAsync(amount, reason);
 		
 		PrintWriter writer = response.getWriter();
 		writer.println("<h1>The entry has been saved!</h1>");
