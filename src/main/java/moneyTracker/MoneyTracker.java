@@ -2,6 +2,7 @@ package moneyTracker;
 
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
+import ru.topacademy.db06_11.AppConfig;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
@@ -15,6 +16,7 @@ import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
@@ -24,19 +26,16 @@ import jakarta.servlet.http.*;
 @WebServlet("/MoneyTrack")
 public class MoneyTracker extends HttpServlet {
 	private static final long serialVersionUID = 1L;
-	private static Session session;
+	private static Db database = null;
        
     /**
      * @see HttpServlet#HttpServlet()
      */
     public MoneyTracker() {
         super();
-        Configuration config = new Configuration();
-		config.configure();
-		System.out.println(config);
-		SessionFactory sessionFactory=config.buildSessionFactory(); 
-        session = sessionFactory.openSession(); 
-        System.out.println(session);
+        AnnotationConfigApplicationContext config = new AnnotationConfigApplicationContext(
+                AppConfig.class);
+        database = config.getBean(Db.class);
     }
 
 	/**
@@ -57,7 +56,7 @@ public class MoneyTracker extends HttpServlet {
 
 	        List<Expense> expenses = null;
 			try {
-				expenses = readFromDbAsync().get();
+				expenses = database.readFromDbAsync().get();
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -79,29 +78,6 @@ public class MoneyTracker extends HttpServlet {
 	        out.println("</html>");    
 	}
 	
-	private List<Expense> readFromDb() 
-	{
-	    return session.createQuery("from Expense E", Expense.class).getResultList();
-	}
-	
-	private CompletableFuture<List<Expense>> readFromDbAsync() 
-	{ 
-		return CompletableFuture.supplyAsync(this::readFromDb); 
-	}
-	
-	private void saveToDb(String expense, String reason) 
-	{
-		Expense e = new Expense(new Date(), Long.parseLong(expense), reason);
-		Transaction t = session.beginTransaction();
-		session.save(e);
-		t.commit();
-	}
-	
-	private CompletableFuture<Void> saveToDbAsync(String expense, String reason) 
-	{ 
-		return CompletableFuture.runAsync(() -> saveToDb(expense, reason)); 
-	}
-
 	/**
 	 * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
 	 */
@@ -112,7 +88,7 @@ public class MoneyTracker extends HttpServlet {
 		
 		System.out.println("Amount: " + amount +  " Reason: " + reason);
 		
-		saveToDbAsync(amount, reason);
+		database.saveToDbAsync(amount, reason);
 		
 		PrintWriter writer = response.getWriter();
 		writer.println("<h1>The entry has been saved!</h1>");
